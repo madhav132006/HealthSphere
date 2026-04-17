@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: healthsphere-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node index.js
+    plan: free
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        value: medcare_ai_super_secret_key_2025
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: CLIENT_URL
+        sync: false
