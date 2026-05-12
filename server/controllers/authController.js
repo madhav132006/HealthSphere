@@ -1,6 +1,5 @@
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const db = require('../config/db');
+const User = require('../models/User');
 
 const register = async (req, res) => {
   try {
@@ -11,30 +10,17 @@ const register = async (req, res) => {
     }
 
     // Check if user exists
-    const existingUser = db.findUserByEmail(email);
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists with this email.' });
     }
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    // Create user
-    const user = {
-      id: 'user-' + Date.now(),
-      name,
-      email,
-      password: hashedPassword,
-      phone: phone || '',
-      createdAt: new Date().toISOString()
-    };
-
-    db.addUser(user);
+    // Create user (password hashed via pre-save hook)
+    const user = await User.create({ name, email, password, phone: phone || '' });
 
     // Generate token
     const token = jwt.sign(
-      { id: user.id, email: user.email, name: user.name },
+      { id: user._id, email: user.email, name: user.name },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -42,7 +28,7 @@ const register = async (req, res) => {
     res.status(201).json({
       message: 'Registration successful!',
       token,
-      user: { id: user.id, name: user.name, email: user.email, phone: user.phone }
+      user: { id: user._id, name: user.name, email: user.email, phone: user.phone }
     });
   } catch (error) {
     console.error('Register error:', error);
@@ -59,20 +45,20 @@ const login = async (req, res) => {
     }
 
     // Find user
-    const user = db.findUserByEmail(email);
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ message: 'Invalid email or password.' });
     }
 
     // Check password
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await user.comparePassword(password);
     if (!isMatch) {
       return res.status(400).json({ message: 'Invalid email or password.' });
     }
 
     // Generate token
     const token = jwt.sign(
-      { id: user.id, email: user.email, name: user.name },
+      { id: user._id, email: user.email, name: user.name },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -80,7 +66,7 @@ const login = async (req, res) => {
     res.json({
       message: 'Login successful!',
       token,
-      user: { id: user.id, name: user.name, email: user.email, phone: user.phone }
+      user: { id: user._id, name: user.name, email: user.email, phone: user.phone }
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -88,14 +74,18 @@ const login = async (req, res) => {
   }
 };
 
-const getProfile = (req, res) => {
-  const user = db.findUserById(req.user.id);
-  if (!user) {
-    return res.status(404).json({ message: 'User not found.' });
+const getProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+    res.json({
+      user: { id: user._id, name: user.name, email: user.email, phone: user.phone }
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error.' });
   }
-  res.json({
-    user: { id: user.id, name: user.name, email: user.email, phone: user.phone }
-  });
 };
 
 module.exports = { register, login, getProfile };

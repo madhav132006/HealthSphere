@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const AiAnalysis = require('../models/AiAnalysis');
 
 // Mock AI responses for when Gemini API key is not available
 const mockAnalyze = (symptoms, age, gender) => {
@@ -32,7 +32,7 @@ const mockAnalyze = (symptoms, age, gender) => {
         { name: 'Cetirizine (10mg)', type: 'OTC', dosage: '1 tablet at night', note: 'If accompanied by cold/allergy symptoms' }
       ],
       severity: 'medium',
-      advice: 'Rest and stay hydrated. Monitor temperature every 4 hours. If fever exceeds 103°F (39.4°C) or persists beyond 3 days, seek medical attention immediately. Avoid self-medicating with antibiotics.',
+      advice: 'Rest and stay hydrated. Monitor temperature every 4 hours. If fever exceeds 103°F (39.4°C) or persists beyond 3 days, seek medical attention immediately.',
       seeDoctor: true
     },
     cough: {
@@ -47,7 +47,7 @@ const mockAnalyze = (symptoms, age, gender) => {
         { name: 'Steam Inhalation', type: 'Home Remedy', dosage: '10-15 minutes, 2-3 times daily', note: 'Add eucalyptus oil for better relief' }
       ],
       severity: 'low',
-      advice: 'Drink warm fluids like honey-lemon water. Gargle with warm salt water. Use a humidifier. If cough persists beyond 2 weeks or is accompanied by blood, see a doctor.',
+      advice: 'Drink warm fluids like honey-lemon water. Gargle with warm salt water. If cough persists beyond 2 weeks or is accompanied by blood, see a doctor.',
       seeDoctor: false
     },
     stomach: {
@@ -62,12 +62,11 @@ const mockAnalyze = (symptoms, age, gender) => {
         { name: 'Dicyclomine (20mg)', type: 'Prescription', dosage: 'As prescribed', note: 'For stomach cramps - consult doctor' }
       ],
       severity: 'medium',
-      advice: 'Eat light, bland foods (khichdi, bananas, toast). Avoid spicy, oily foods and caffeine. Stay hydrated with ORS. If you notice blood in stool or severe persistent pain, visit a doctor immediately.',
+      advice: 'Eat light, bland foods. Avoid spicy, oily foods and caffeine. Stay hydrated with ORS. If you notice blood in stool or severe persistent pain, visit a doctor immediately.',
       seeDoctor: true
     }
   };
 
-  // Find the best matching response
   let matched = null;
   for (const [key, value] of Object.entries(responses)) {
     if (symptomLower.includes(key)) {
@@ -76,7 +75,6 @@ const mockAnalyze = (symptoms, age, gender) => {
     }
   }
 
-  // Default response if no match
   if (!matched) {
     matched = {
       conditions: [
@@ -90,7 +88,7 @@ const mockAnalyze = (symptoms, age, gender) => {
         { name: 'Consult a Specialist', type: 'Advice', dosage: 'N/A', note: 'For persistent or unclear symptoms, professional evaluation is recommended' }
       ],
       severity: 'low',
-      advice: 'Monitor your symptoms for 24-48 hours. Maintain a symptom diary noting onset, duration, and severity. If symptoms worsen or new symptoms appear, consult a healthcare professional. Consider booking a consultation with one of our specialist doctors.',
+      advice: 'Monitor your symptoms for 24-48 hours. If symptoms worsen or new symptoms appear, consult a healthcare professional.',
       seeDoctor: true
     };
   }
@@ -112,12 +110,11 @@ const analyzeSymptoms = async (req, res) => {
 
     let result;
 
-    // Try Gemini API if key is available
     if (process.env.GEMINI_API_KEY) {
       try {
         const { GoogleGenerativeAI } = require('@google/generative-ai');
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
         const prompt = `You are a medical AI assistant. A patient reports the following:
 Symptoms: ${symptoms}
@@ -143,10 +140,8 @@ List 2-3 conditions and 2-3 medicines. Be medically accurate but note this is in
         const genResult = await model.generateContent(prompt);
         const responseText = genResult.response.text().trim();
         
-        // Try to parse the JSON response
         let parsed;
         try {
-          // Remove potential markdown code block wrapping
           const cleanJson = responseText.replace(/```json?\n?/g, '').replace(/```\n?/g, '').trim();
           parsed = JSON.parse(cleanJson);
         } catch (parseErr) {
@@ -165,21 +160,18 @@ List 2-3 conditions and 2-3 medicines. Be medically accurate but note this is in
         result = { ...mockAnalyze(symptoms, age, gender), aiPowered: false };
       }
     } else {
-      // Use mock responses
       result = { ...mockAnalyze(symptoms, age, gender), aiPowered: false };
     }
 
-    // Store analysis
+    // Store analysis in MongoDB
     if (req.user) {
-      db.addAiAnalysis({
-        id: 'analysis-' + Date.now(),
+      await AiAnalysis.create({
         userId: req.user.id,
         symptoms,
         age,
         gender,
         duration,
-        result,
-        createdAt: new Date().toISOString()
+        result
       });
     }
 
@@ -190,9 +182,13 @@ List 2-3 conditions and 2-3 medicines. Be medically accurate but note this is in
   }
 };
 
-const getHistory = (req, res) => {
-  const analyses = db.getUserAnalyses(req.user.id);
-  res.json({ analyses: analyses.reverse() });
+const getHistory = async (req, res) => {
+  try {
+    const analyses = await AiAnalysis.find({ userId: req.user.id }).sort({ createdAt: -1 });
+    res.json({ analyses });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch history.' });
+  }
 };
 
 module.exports = { analyzeSymptoms, getHistory };

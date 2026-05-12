@@ -57,11 +57,11 @@ const DoctorsList = () => {
 
   const handlePayment = async () => {
     if (!selectedDoctor) return;
-    setPaymentLoading(selectedDoctor.id);
+    setPaymentLoading(selectedDoctor._id);
 
     try {
       const orderRes = await api.post('/payment/create-order', {
-        doctorId: selectedDoctor.id,
+        doctorId: selectedDoctor._id,
         amount: selectedDoctor.fee
       });
 
@@ -73,7 +73,7 @@ const DoctorsList = () => {
           razorpay_order_id: data.orderId,
           razorpay_payment_id: 'demo_pay_' + Date.now(),
           razorpay_signature: 'demo_sig',
-          doctorId: selectedDoctor.id,
+          doctorId: selectedDoctor._id,
           amount: selectedDoctor.fee,
           demo: true
         });
@@ -95,7 +95,7 @@ const DoctorsList = () => {
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
-                doctorId: selectedDoctor.id,
+                doctorId: selectedDoctor._id,
                 amount: selectedDoctor.fee
               });
 
@@ -170,7 +170,7 @@ const DoctorsList = () => {
         {/* Doctors Grid */}
         <div className="doctors-grid">
           {doctors.map((doctor) => (
-            <div className="doctor-card" key={doctor.id} id={`doctor-${doctor.id}`}>
+            <div className="doctor-card" key={doctor._id} id={`doctor-${doctor._id}`}>
               <div className="doctor-header">
                 <div className="doctor-avatar">{doctor.avatar}</div>
                 <div className="doctor-info">
@@ -205,10 +205,10 @@ const DoctorsList = () => {
                 <button
                   className="btn btn-primary"
                   onClick={() => handleBookConsultation(doctor)}
-                  disabled={!doctor.available || paymentLoading === doctor.id}
-                  id={`book-${doctor.id}`}
+                  disabled={!doctor.available || paymentLoading === doctor._id}
+                  id={`book-${doctor._id}`}
                 >
-                  {paymentLoading === doctor.id ? (
+                  {paymentLoading === doctor._id ? (
                     <><span className="spinner"></span> Processing</>
                   ) : (
                     'Book Now →'

@@ -1,10 +1,28 @@
-// In-memory database with seed data
-const db = {
-  users: [],
-  
-  doctors: [
+const mongoose = require('mongoose');
+const Doctor = require('../models/Doctor');
+
+const connectDB = async () => {
+  try {
+    const conn = await mongoose.connect(process.env.MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000
+    });
+    console.log(`  ✅ MongoDB connected: ${conn.connection.host}`);
+    
+    // Seed doctors if collection is empty
+    const count = await Doctor.countDocuments();
+    if (count === 0) {
+      await seedDoctors();
+    }
+  } catch (error) {
+    console.error('  ❌ MongoDB connection error:', error.message);
+    throw error;
+  }
+};
+
+const seedDoctors = async () => {
+  const doctors = [
     {
-      id: 'doc-1',
       name: 'Dr. Priya Sharma',
       specialization: 'General Physician',
       experience: 12,
@@ -19,7 +37,6 @@ const db = {
       consultations: 2850
     },
     {
-      id: 'doc-2',
       name: 'Dr. Rajesh Mehta',
       specialization: 'Cardiologist',
       experience: 18,
@@ -34,7 +51,6 @@ const db = {
       consultations: 4200
     },
     {
-      id: 'doc-3',
       name: 'Dr. Ananya Desai',
       specialization: 'Dermatologist',
       experience: 8,
@@ -49,7 +65,6 @@ const db = {
       consultations: 1890
     },
     {
-      id: 'doc-4',
       name: 'Dr. Vikram Singh',
       specialization: 'Orthopedic Surgeon',
       experience: 15,
@@ -64,7 +79,6 @@ const db = {
       consultations: 3100
     },
     {
-      id: 'doc-5',
       name: 'Dr. Meera Krishnan',
       specialization: 'Pediatrician',
       experience: 10,
@@ -79,7 +93,6 @@ const db = {
       consultations: 3600
     },
     {
-      id: 'doc-6',
       name: 'Dr. Arjun Patel',
       specialization: 'Psychiatrist',
       experience: 14,
@@ -93,52 +106,10 @@ const db = {
       nextAvailable: '20 min',
       consultations: 2400
     }
-  ],
+  ];
 
-  chatSessions: [],
-  messages: [],
-  payments: [],
-  aiAnalyses: [],
-
-  // Helper methods
-  findUserByEmail(email) {
-    return this.users.find(u => u.email === email);
-  },
-  findUserById(id) {
-    return this.users.find(u => u.id === id);
-  },
-  findDoctorById(id) {
-    return this.doctors.find(d => d.id === id);
-  },
-  addUser(user) {
-    this.users.push(user);
-    return user;
-  },
-  addPayment(payment) {
-    this.payments.push(payment);
-    return payment;
-  },
-  addChatSession(session) {
-    this.chatSessions.push(session);
-    return session;
-  },
-  addMessage(message) {
-    this.messages.push(message);
-    return message;
-  },
-  getSessionMessages(sessionId) {
-    return this.messages.filter(m => m.sessionId === sessionId);
-  },
-  getUserSessions(userId) {
-    return this.chatSessions.filter(s => s.userId === userId);
-  },
-  addAiAnalysis(analysis) {
-    this.aiAnalyses.push(analysis);
-    return analysis;
-  },
-  getUserAnalyses(userId) {
-    return this.aiAnalyses.filter(a => a.userId === userId);
-  }
+  await Doctor.insertMany(doctors);
+  console.log('  📋 Seeded 6 doctors into MongoDB');
 };
 
-module.exports = db;
+module.exports = connectDB;

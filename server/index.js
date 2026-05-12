@@ -3,6 +3,7 @@ const express = require('express');
 const http = require('http');
 const cors = require('cors');
 const { Server } = require('socket.io');
+const connectDB = require('./config/db');
 const setupSocket = require('./socket/chat');
 
 const app = express();
@@ -46,7 +47,8 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     features: {
       ai: process.env.GEMINI_API_KEY ? 'gemini' : 'mock',
-      payments: process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'rzp_test_your_key_id' ? 'razorpay' : 'demo'
+      payments: process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'rzp_test_your_key_id' ? 'razorpay' : 'demo',
+      database: 'MongoDB'
     }
   });
 });
@@ -54,21 +56,35 @@ app.get('/api/health', (req, res) => {
 // Setup Socket.io
 setupSocket(io);
 
-// Start server
+// Connect to MongoDB then start server
 const PORT = process.env.PORT || 5001;
-server.listen(PORT, () => {
-  console.log(`
+
+const startServer = async () => {
+  // Connect to MongoDB in the background (don't block server startup)
+  connectDB().catch(err => {
+    console.error('  ⚠️  MongoDB connection failed (server still running):', err.message);
+  });
+  
+  server.listen(PORT, () => {
+    console.log(`
   ╔═══════════════════════════════════════════╗
   ║                                           ║
   ║   🏥 HealthSphere API Server              ║
   ║   Running on http://localhost:${PORT}         ║
   ║                                           ║
+  ║   Database: 🗄️  MongoDB (connecting...)    ║
   ║   AI Mode: ${process.env.GEMINI_API_KEY ? '🤖 Gemini API' : '📋 Mock Responses'}            ║
   ║   Payments: ${process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'rzp_test_your_key_id' ? '💳 Razorpay Live' : '🎮 Demo Mode'}           ║
   ║   WebSocket: ✅ Active                    ║
   ║                                           ║
   ╚═══════════════════════════════════════════╝
-  `);
+    `);
+  });
+};
+
+startServer().catch(err => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });
 
 module.exports = { app, server, io };

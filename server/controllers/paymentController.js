@@ -1,7 +1,8 @@
 const crypto = require('crypto');
-const db = require('../config/db');
+const Doctor = require('../models/Doctor');
+const Payment = require('../models/Payment');
+const ChatSession = require('../models/ChatSession');
 
-// Check if Razorpay keys are configured
 const hasRazorpayKeys = () => {
   return process.env.RAZORPAY_KEY_ID && 
          process.env.RAZORPAY_KEY_SECRET && 
@@ -9,39 +10,47 @@ const hasRazorpayKeys = () => {
 };
 
 let razorpay = null;
-if (hasRazorpayKeys()) {
-  const Razorpay = require('razorpay');
-  razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET
-  });
-}
+const getRazorpay = () => {
+  if (razorpay) return razorpay;
+  if (hasRazorpayKeys()) {
+    try {
+      const Razorpay = require('razorpay');
+      razorpay = new Razorpay({
+        key_id: process.env.RAZORPAY_KEY_ID,
+        key_secret: process.env.RAZORPAY_KEY_SECRET
+      });
+    } catch (err) {
+      console.error('Failed to load Razorpay SDK:', err.message);
+    }
+  }
+  return razorpay;
+};
 
 const createOrder = async (req, res) => {
   try {
     const { doctorId, amount } = req.body;
-    const doctor = db.findDoctorById(doctorId);
+    const doctor = await Doctor.findById(doctorId);
 
     if (!doctor) {
       return res.status(404).json({ message: 'Doctor not found.' });
     }
 
     const orderAmount = amount || doctor.fee;
+    const rzp = getRazorpay();
 
-    if (razorpay) {
-      // Real Razorpay order
+    if (rzp) {
       const options = {
-        amount: orderAmount * 100, // Convert to paise
+        amount: orderAmount * 100,
         currency: 'INR',
         receipt: `order_${Date.now()}`,
         notes: {
-          doctorId: doctor.id,
+          doctorId: doctor._id.toString(),
           doctorName: doctor.name,
           userId: req.user.id
         }
       };
 
-      const order = await razorpay.orders.create(options);
+      const order = await rzp.orders.create(options);
 
       res.json({
         orderId: order.id,
@@ -52,9 +61,7 @@ const createOrder = async (req, res) => {
         mode: 'live'
       });
     } else {
-      // Demo mode - simulate order creation
       const demoOrderId = 'order_demo_' + Date.now();
-      
       res.json({
         orderId: demoOrderId,
         amount: orderAmount * 100,
@@ -66,7 +73,10 @@ const createOrder = async (req, res) => {
     }
   } catch (error) {
     console.error('Create order error:', error);
-    res.status(500).json({ message: 'Failed to create payment order.' });
+    if (error.statusCode) {
+      console.error('Razorpay Error Details:', error.error);
+    }
+    res.status(500).json({ message: 'Failed to create payment order.', details: error.message || error });
   }
 };
 
@@ -77,16 +87,13 @@ const verifyPayment = async (req, res) => {
     let isValid = false;
 
     if (demo || !hasRazorpayKeys()) {
-      // Demo mode - always valid
       isValid = true;
     } else {
-      // Verify Razorpay signature
       const body = razorpay_order_id + '|' + razorpay_payment_id;
       const expectedSignature = crypto
         .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
         .update(body)
         .digest('hex');
-
       isValid = expectedSignature === razorpay_signature;
     }
 
@@ -94,39 +101,31 @@ const verifyPayment = async (req, res) => {
       return res.status(400).json({ message: 'Payment verification failed.' });
     }
 
-    // Create payment record
-    const payment = {
-      id: 'pay-' + Date.now(),
+    // Create payment record in MongoDB
+    const payment = await Payment.create({
       userId: req.user.id,
       doctorId,
       orderId: razorpay_order_id || 'demo_order',
       paymentId: razorpay_payment_id || 'demo_payment_' + Date.now(),
       amount: req.body.amount || 0,
-      status: 'success',
-      createdAt: new Date().toISOString()
-    };
+      status: 'success'
+    });
 
-    db.addPayment(payment);
-
-    // Create chat session
-    const session = {
-      id: 'session-' + Date.now(),
+    // Create chat session in MongoDB
+    const session = await ChatSession.create({
       userId: req.user.id,
       doctorId,
-      paymentId: payment.id,
+      paymentId: payment._id,
       status: 'active',
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString() // 30 min session
-    };
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000)
+    });
 
-    db.addChatSession(session);
-
-    const doctor = db.findDoctorById(doctorId);
+    const doctor = await Doctor.findById(doctorId);
 
     res.json({
       message: 'Payment verified successfully!',
-      sessionId: session.id,
-      doctor: { id: doctor.id, name: doctor.name, specialization: doctor.specialization },
+      sessionId: session._id,
+      doctor: { id: doctor._id, name: doctor.name, specialization: doctor.specialization },
       expiresAt: session.expiresAt
     });
   } catch (error) {
@@ -135,9 +134,15 @@ const verifyPayment = async (req, res) => {
   }
 };
 
-const getPaymentHistory = (req, res) => {
-  const payments = db.payments.filter(p => p.userId === req.user.id);
-  res.json({ payments: payments.reverse() });
+const getPaymentHistory = async (req, res) => {
+  try {
+    const payments = await Payment.find({ userId: req.user.id })
+      .populate('doctorId', 'name specialization')
+      .sort({ createdAt: -1 });
+    res.json({ payments });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch payment history.' });
+  }
 };
 
 module.exports = { createOrder, verifyPayment, getPaymentHistory };
