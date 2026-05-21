@@ -9,6 +9,12 @@ const register = async (req, res) => {
       return res.status(400).json({ message: 'Name, email and password are required.' });
     }
 
+    // Check if MongoDB is connected
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ message: 'Database is not available. Please try again in a moment.' });
+    }
+
     // Check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -32,6 +38,13 @@ const register = async (req, res) => {
     });
   } catch (error) {
     console.error('Register error:', error);
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(e => e.message);
+      return res.status(400).json({ message: messages.join(', ') });
+    }
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'User already exists with this email.' });
+    }
     res.status(500).json({ message: 'Server error during registration.' });
   }
 };

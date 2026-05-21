@@ -60,10 +60,13 @@ setupSocket(io);
 const PORT = process.env.PORT || 5001;
 
 const startServer = async () => {
-  // Connect to MongoDB in the background (don't block server startup)
-  connectDB().catch(err => {
-    console.error('  ⚠️  MongoDB connection failed (server still running):', err.message);
-  });
+  // Wait for MongoDB to connect BEFORE accepting requests
+  try {
+    await connectDB();
+  } catch (err) {
+    console.error('  ⚠️  MongoDB connection failed:', err.message);
+    console.error('  Server will start anyway, but DB operations will fail until reconnected.');
+  }
   
   server.listen(PORT, () => {
     console.log(`
@@ -72,7 +75,7 @@ const startServer = async () => {
   ║   🏥 HealthSphere API Server              ║
   ║   Running on http://localhost:${PORT}         ║
   ║                                           ║
-  ║   Database: 🗄️  MongoDB (connecting...)    ║
+  ║   Database: 🗄️  MongoDB                    ║
   ║   AI Mode: ${process.env.GEMINI_API_KEY ? '🤖 Gemini API' : '📋 Mock Responses'}            ║
   ║   Payments: ${process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'rzp_test_your_key_id' ? '💳 Razorpay Live' : '🎮 Demo Mode'}           ║
   ║   WebSocket: ✅ Active                    ║
